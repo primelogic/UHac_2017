@@ -2,6 +2,9 @@
 /*
  * android instructions:
  * 1.) after connecting, send any text.
+ * 
+ * Diego Updates:
+ * 
  */
 
 #include <SPI.h>
@@ -31,7 +34,7 @@ NFC_Module nfc;
 #endif
 
 #define ADDRESS 10
-#define SECRET 143
+#define SECRET 143 //CONTAINS THE PASSKEY
 #define TRIAL 50
 #define MODE 100
 #define BALANCE 5
@@ -54,7 +57,7 @@ uint8_t STATE;
 
 uint8_t ACCOUNTING_STATE;
 
-enum {NORMAL_OPER,SELECT_AMOUNT, EMERGENCY_MODE, ACCOUNT_ONES, ACCOUNT_TENS, TRANSACTION};
+enum {NORMAL_OPER,SELECT_AMOUNT, EMERGENCY_MODE, ACCOUNT_ONES, ACCOUNT_TENS, TRANSACTION, TRANSACTION_FINISHED, NEW_DEVICE};
 
 Button plusBtn(2, true, true, 20);
 Button minusBtn(7, true,true ,20);
@@ -67,11 +70,13 @@ volatile boolean isDisconnected = false;
 
 uint8_t buttonSensor = 0;
 
-uint8_t STATE_MEMORY;
-u8 TX_BUFFER[50];
+uint8_t STATE_MEMORY = 100;
+u8 TX_BUFFER[10];
 u8 TX_LEN;
-u8 RX_BUFFER[50];
+u8 RX_BUFFER[10];
 u8 RX_LEN;
+
+unsigned long amountToReceive;
 
 void setup() {
   //LOAD ALL EEPROM READ AT UPFRONT.
@@ -81,7 +86,13 @@ void setup() {
   switch(EEPROM.read(MODE)) {
     case 0: 
       //GO TO DIEGO's WORK
+      STATE = NEW_DEVICE;
       nfc.begin();
+      
+      break;
+    case 1:
+      nfc.begin();
+      STATE = NORMAL_OPER;
       break;
     case 2:
       STATE = EMERGENCY_MODE;
@@ -91,7 +102,7 @@ void setup() {
   ACCOUNTING_STATE = ACCOUNT_ONES;
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.clearDisplay();
-  EEPROM.write(ADDRESS,0);
+  //EEPROM.write(ADDRESS,0);
   nfc.SAMConfiguration();
 }
 
@@ -129,7 +140,28 @@ switch(STATE){
               //Do Idle only. disable the device @ emergency mode.
         }
      }
+     if(nfc.P2PTargetInit()){
+        
+        for ( int i = 0; i < 20; i++ ) {
+          TX_BUFFER[i] = 0;
+        }
+        if (nfc.P2PTargetTxRx(TX_BUFFER, TX_LEN, RX_BUFFER, &RX_LEN)){
+          //convert array to long.
+          uint32_t currentAmount;
+          EEPROM.get(BALANCE, currentAmount);
+          amountToReceive = atol(RX_BUFFER);
+          EEPROM.put(BALANCE,  currentAmount + amountToReceive );
+          //Display successful transfer
+          EEPROM.get(BALANCE, currentAmount);
+          STATE_MEMORY = NORMAL_OPER;
+          STATE = TRANSACTION_FINISHED;
+        }
+      }
      break;
+
+   case NEW_DEVICE:
+    
+    break;
    case SELECT_AMOUNT:
       plusBtn.read();
       minusBtn.read();
@@ -159,16 +191,35 @@ switch(STATE){
         if ( STATE_MEMORY == SELECT_AMOUNT ) {STATE = SELECT_AMOUNT; STATE_MEMORY = TRANSACTION;}
         if ( STATE_MEMORY == NORMAL_OPER ) {STATE = NORMAL_OPER; STATE_MEMORY = TRANSACTION;}
       } else {
-        
-        memcpy(); //Convert long to an array.
+        TX_LEN = strlen(((String)amountToTransfer).c_str());
+        strcpy(TX_BUFFER, ((String)amountToTransfer).c_str());
+    
         if(nfc.P2PInitiatorTxRx(TX_BUFFER, TX_LEN, RX_BUFFER, &RX_LEN)){
-          //LEFT HERE
+          uint32_t currentAmount;
+          EEPROM.get(BALANCE, currentAmount);
+          EEPROM.put(BALANCE, currentAmount - amountToTransfer);
+          //display transfer successful
+          EEPROM.get(BALANCE, currentAmount);
+          STATE_MEMORY = TRANSACTION;
+          STATE = TRANSACTION_FINISHED;
+          //pl("SUCCESS! You have Transfered:" + (String)amountToTransfer);
+          //pl("Your Account Balance:" + (String)currentAmount);
+         // pl("");
         }
       }
-      
       break;
+
+    case TRANSACTION_FINISHED:
+       uint32_t currentAmount;
+       EEPROM.get(BALANCE, currentAmount);
+       pl("CONGRATULATIONS! " + (String)currentAmount);
+       if ( STATE_MEMORY == TRANSACTION ) ;//display_transceiver(currentAmount,tx);
+       else if (STATE_MEMORY == NORMAL_OPER) ; //display_tranceiver(currentAmount,rx);
+       delay(2000);
+       STATE = NORMAL_OPER;
+       break;
       
-}
+  fdtr5}
  
  
 }
