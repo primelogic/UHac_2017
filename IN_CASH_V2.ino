@@ -52,12 +52,12 @@ Adafruit_SSD1306 display(OLED_RESET);
 #error("Height incorrect, please fix Adafruit_SSD1306.h!");
 #endif
 
-unsigned long amountToTransfer = 0;
+long amountToTransfer = 0;
 uint8_t STATE;
 
 uint8_t ACCOUNTING_STATE;
 
-enum {NORMAL_OPER,SELECT_AMOUNT, EMERGENCY_MODE, ACCOUNT_ONES, ACCOUNT_TENS, TRANSACTION, TRANSACTION_FINISHED, NEW_DEVICE};
+enum {NORMAL_OPER,SELECT_AMOUNT, EMERGENCY_MODE, ACCOUNT_ONES, ACCOUNT_TENS, TRANSACTION, TRANSACTION_FINISHED, NEW_DEVICE, CHANGE_PASSWORD};
 
 Button plusBtn(2, true, true, 20);
 Button minusBtn(7, true,true ,20);
@@ -114,15 +114,24 @@ switch(STATE){
     twoBtn.read();
     threeBtn.read();
     fourBtn.read();
+    plusBtn.read();
+    minusBtn.read();
  
     //if (oneBtn.wasPressed()) EEPROM.write(ADDRESS, EEPROM.read(ADDRESS) | 2); //switch to sram
      if (oneBtn.wasPressed()) buttonSensor |= 2;
     if (twoBtn.wasPressed()) buttonSensor |= 4; //switch to sram
     if (threeBtn.wasPressed()) buttonSensor |= 8; //switch to sram
     if (fourBtn.wasPressed()) buttonSensor |= 16; //switch to sram
+    if (plusBtn.wasPressed()) buttonSensor |= 32;
+    if (minusBtn.wasPressed()) buttonSensor |= 64;
 
     if (oneBtn.wasReleased() || twoBtn.wasReleased() || threeBtn.wasReleased() || fourBtn.wasReleased() ) {
         //read the value of ADDRESS EEPROM
+          if ( buttonSensor == 126 ) {
+            STATE = CHANGE_PASSWORD; 
+            STATE_MEMORY = NORMAL_OPER;
+            goto proceed1;
+            }
    
           if ( buttonSensor == EEPROM.read(SECRET)) {
             //if confirmed, go to transmit mode. !CHANGE MODE!
@@ -139,6 +148,8 @@ switch(STATE){
               }
               //Do Idle only. disable the device @ emergency mode.
         }
+        proceed1:
+        buttonSensor = 0;
      }
      if(nfc.P2PTargetInit()){
         
@@ -157,11 +168,17 @@ switch(STATE){
           STATE = TRANSACTION_FINISHED;
         }
       }
+      
      break;
 
    case NEW_DEVICE:
     
     break;
+
+   case CHANGE_PASSWORD:
+   
+    break;
+    
    case SELECT_AMOUNT:
       plusBtn.read();
       minusBtn.read();
@@ -219,7 +236,7 @@ switch(STATE){
        STATE = NORMAL_OPER;
        break;
       
-  fdtr5}
+  }
  
  
 }
