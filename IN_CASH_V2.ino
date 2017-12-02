@@ -17,7 +17,7 @@
 
 NFC_Module nfc;
 
-//#define DEBUG
+#define DEBUG
 
 #ifdef DEBUG
   #define p(x) Serial3.print(x)
@@ -74,7 +74,7 @@ Button twoBtn(5, true,true, 40);
 Button threeBtn(6, true, true, 40);
 Button fourBtn(7, true, true ,40);
 
-volatile boolean isDisconnected = false;
+volatile boolean isConnected = false;
 
 uint8_t buttonSensor = 0;
 
@@ -84,6 +84,8 @@ u8 TX_LEN;
 u8 RX_BUFFER[10];
 u8 RX_LEN;
 
+String ser_receive = "";
+
 long amountToReceive;
 long dynamicBalance;
 long amountToTransfer;
@@ -91,10 +93,11 @@ long amountToTransfer;
 void setup() {
   //LOAD ALL EEPROM READ AT UPFRONT.
   b(38400);
+  attachInterrupt(digitalPinToInterrupt(19), device_connected, RISING);
   //check mode!
   //EEPROM.put(BALANCE,2000);
-  EEPROM.write(MODE, 0);
-  EEPROM.write(BALANCE, 100);
+  //EEPROM.write(MODE, 0);
+  //EEPROM.write(BALANCE, 100);
 
   EEPROM.get(BALANCE, dynamicBalance);
  // EEPROM.write(MODE, 1);
@@ -120,6 +123,10 @@ void setup() {
   display.clearDisplay();
   //EEPROM.write(ADDRESS,0);
   nfc.SAMConfiguration();
+
+}
+void device_connected() {
+  isConnected = true;
 }
 
 
@@ -142,8 +149,23 @@ switch(STATE){
     if (plusBtn.wasPressed()) buttonSensor |= 32;
     if (minusBtn.wasPressed()) buttonSensor |= 64;
 
+    if (a() > 0 ) {
+      char rec = (char)r();
+      ser_receive += rec;
+      if ( rec == '\r' ) {
+        displayStr("Loading...",2,0,0);
+          uint32_t currentAmount;
+          EEPROM.get(BALANCE, currentAmount);
+          EEPROM.put(BALANCE, currentAmount + ser_receive.toInt());
+          delay(500);
+          displayStr("You have received: PHP " + ser_receive,1,0,0);
+          ser_receive = "";
+          delay(2000);
+      }
+    }
+
     if (oneBtn.wasReleased() || twoBtn.wasReleased() || threeBtn.wasReleased() || fourBtn.wasReleased() ) {
-        pl("ENTERED: " + buttonSensor);
+      //  pl("ENTERED: " + buttonSensor);
         //read the value of ADDRESS EEPROM
           if ( buttonSensor == 126 ) {
             STATE = CHANGE_PASSWORD; 
@@ -192,7 +214,12 @@ switch(STATE){
      break;
 
      case EMERGENCY_MODE:
-     pl("I AM AT EMERGENCY MODE");
+    // pl("I AM AT EMERGENCY MODE");
+    if ( isConnected ) { //WEAK Soution.
+      EEPROM.write(TRIAL, 0);
+      STATE = NORMAL_OPER;
+      STATE_MEMORY = EMERGENCY_MODE;
+    }
      delay(1000);
      displayStr(F("EMERGENCY   MODE"), 2, 11, 0);
      break;
@@ -215,7 +242,7 @@ switch(STATE){
         fourBtn.wasReleased()){
           EEPROM.write(100, 1);
     EEPROM.write(143, passwordCache);
-    pl(passwordCache);
+  //  pl(passwordCache);
     STATE = NORMAL_OPER;
     display.clearDisplay();
     display.display();
@@ -357,6 +384,20 @@ switch(STATE){
           if (plusBtn.wasReleased() || minusBtn.wasReleased()) ACCOUNTING_STATE = ACCOUNT_ONES;
           break;
       }
+      if (a() > 0 ) {
+      char rec = (char)r();
+      ser_receive += rec;
+      if ( rec == '\r' ) {
+        displayStr("Loading...",2,0,0);
+          uint32_t currentAmount;
+          EEPROM.get(BALANCE, currentAmount);
+          EEPROM.put(BALANCE, currentAmount + ser_receive.toInt());
+          delay(500);
+          displayStr("You have received: PHP " + ser_receive,1,0,0);
+          ser_receive = "";
+          delay(2000);
+      }
+    }
       break;
     case TRANSACTION:
       //On UI Display transmit,
@@ -381,7 +422,7 @@ switch(STATE){
     case TRANSACTION_FINISHED:
        EEPROM.get(BALANCE, dynamicBalance);
      if ( dynamicBalance <= amountToTransfer ) amountToTransfer = dynamicBalance;
-     pl("CONGRATULATIONS! " + (String)dynamicBalance);
+   //  pl("CONGRATULATIONS! " + (String)dynamicBalance);
      if ( STATE_MEMORY == TRANSACTION ) {STATE = SELECT_AMOUNT; STATE_MEMORY = TRANSACTION_FINISHED; displayStr("SUCCESS!", 2, 20, 13);}
      else if (STATE_MEMORY == NORMAL_OPER) {STATE = NORMAL_OPER; STATE_MEMORY = TRANSACTION_FINISHED; displayStr("SUCCESS!", 2, 20, 13);}
      //STATIC LOADING DISPLAY (2sec)
@@ -500,10 +541,15 @@ void displayTagLine() {
       display.print(F("InCash"));
       display.setTextSize(0);
       display.setTextColor(WHITE);
-      display.setCursor(4,16);
-      display.print(F("The Future of Bankin"));
-   
-  display.display();
+      display.setCursor(0,16);
+      display.print(F("The Future of Banking"));
+      display.setCursor(11,24);
+      display.print(F("Bal: PHP "));
+      display.setCursor(61,24);
+      uint32_t storageLong;
+      EEPROM.get(BALANCE, storageLong);
+      display.print(storageLong);
+      
   display.display();
   
   display.clearDisplay();
@@ -521,21 +567,10 @@ void displayStr( String input,int txtSize, int posx, int posy) {
   display.clearDisplay();
   
 }
-/*
-void display_success(bool transmit) {
-      display.setTextSize(1);
-      display.setTextColor(WHITE);
-      display.setCursor(0,0);
-  if (transmit) {
-      display.printg("You have successfully transferred: PHP " + amountToTransfer);
-      
-  } else {
-    display.print("You have received: PHP " + amountToReceive);
-  }
-   display.print("Your Remaining Balance: PHP " + dynamicBalance);
-   display.display();
-   display.clearDisplay();
-}*/
+
+
+
+
 
 boolean dumpSerial() {
   if ( a()  > 0) {
@@ -547,19 +582,5 @@ boolean dumpSerial() {
   return(true);
 }
 
-boolean isLocked() {
-  String readSerial = "";
-  while ( a() > 0 ) {
-      readSerial += (char)r();
 
-  }
-   readSerial.trim();
-      if( readSerial == "UNLOCK") {
-      //  p("PASOK!");
-        return(false);
-      }
-      
-      delay(10);
-  return(true);
-}
 
